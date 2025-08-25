@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Login</title>
+    <link rel="stylesheet" href="/static/css/chat.css">
+</head>
+<body>
+    <div class="chat-container">
+        <h2>Đăng nhập</h2>
+        {% if error %}
+            <div class="system">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="/login">
+            <input type="text" name="username" id="username" placeholder="Username" required /><br>
+            <input type="password" name="password" id="password" placeholder="Password" required /><br>
+            <button type="submit">Đăng nhập</button>
+        </form>
+        <p>Chưa có tài khoản? <a href="/register">Đăng ký</a></p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat Room</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="chat-container">
+        <h2>Chào, {{ username }}</h2>
+        <a href="/logout">Logout</a>
+        <div id="chat-box">
+            {% for msg in messages %}
+                <div class="msg">
+                    [{{ msg.timestamp | hms_local }}] 
+                    <b>{{ msg.sender_id }}</b>: {{ msg.content }}
+                </div>
+            {% endfor %}
+        </div>
+        <input type="text" id="message" placeholder="Nhập tin nhắn..." />
+        <button id="send">Gửi</button>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
