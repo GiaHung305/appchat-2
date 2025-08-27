@@ -1,34 +1,62 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <title>Chat Room</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+  <meta charset="UTF-8">
+  <title>Chat App</title>
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body data-username="{{ username }}">
-    <div class="chat-container">
-        <div class="chat-header">
-            <h2>Chào, {{ username }}</h2>
-            <a href="/logout">Logout</a>
-        </div>
+  <div class="chat-app">
 
-        <div id="chat-box">
-            {% for msg in messages %}
-                <div class="msg {% if msg.sender_id == 0 %}system{% elif msg.sender.username == username %}self{% else %}other{% endif %}">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>💬 Chat</h2>
+        </div>
+    <ul id="user-list" class="user-list">
+    <li data-room="global" class="active">🌍 Phòng chung</li>
+
+    <li class="section">👤 Bạn bè</li>
+    {% for u in users %}
+        <li data-room="user_{{ u.id }}" data-user-id="{{ u.id }}">👤 {{ u.username }}</li>
+    {% endfor %}
+
+    <li class="section">👥 Nhóm</li>
+    {% for g in groups %}
+        <li data-room="group_{{ g.id }}" data-group-id="{{ g.id }}">👥 {{ g.name }}</li>
+    {% endfor %}
+    </ul>
+
+    </aside>
+
+    <!-- Chat main -->
+    <main class="chat-main">
+      <div class="chat-header">
+        <h3 id="room-title">Phòng chung</h3>
+        <a href="/logout" class="logout-btn">Đăng xuất</a>
+      </div>
+
+      <div id="chat-box" class="chat-box">
+        {% for msg in messages %}
+            <div class="msg {% if msg.sender_id == 0 %}system{% elif msg.sender.username == username %}self{% else %}other{% endif %}">
+                <div class="bubble">
                     [{{ msg.timestamp | hms_local }}] 
                     <b>{{ msg.sender.username if msg.sender else 'System' }}</b>: {{ msg.content | e }}
                 </div>
-            {% endfor %}
-        </div>
+            </div>
+        {% endfor %}
+      </div>
 
-        <div class="chat-input">
-            <input type="text" id="message" placeholder="Nhập tin nhắn..." />
-            <button id="send">Gửi</button>
-        </div>
-    </div>
+      <div class="chat-input">
+        <input type="text" id="message" placeholder="Nhập tin nhắn..." />
+        <button id="send">➤</button>
+      </div>
+    </main>
 
-    <!-- Socket.IO client -->
-    <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
-    <script src="/static/app.js"></script>
+  </div>
+
+  <!-- Socket.IO client -->
+  <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
+  <script src="/static/app.js"></script>
 </body>
 </html>

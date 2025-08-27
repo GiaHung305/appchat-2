@@ -10,7 +10,7 @@ class User(Base):
     username = Column(String(50), unique=True, index=True)
     password = Column(String(255), nullable=False)
     avatar = Column(String(255), nullable=True)
-    
+
     messages_sent = relationship("Message", back_populates="sender", foreign_keys="Message.sender_id")
     messages_received = relationship("Message", back_populates="receiver", foreign_keys="Message.receiver_id")
 
@@ -20,13 +20,16 @@ class Friend(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     friend_id = Column(Integer, ForeignKey("users.id"))
-
+    status = Column(String(20), default="pending")  # pending, accepted, blocked
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 # Bảng groups
 class Group(Base):
     __tablename__ = "groups"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100))
+    owner_id = Column(Integer, ForeignKey("users.id"))   # ai tạo nhóm
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     messages = relationship("Message", back_populates="group")
 
@@ -37,6 +40,8 @@ class GroupMember(Base):
     id = Column(Integer, primary_key=True, index=True)
     group_id = Column(Integer, ForeignKey("groups.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
+    role = Column(String(20), default="member")  # owner, admin, member
+    joined_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 # Bảng messages
