@@ -1,63 +1,66 @@
-from fastapi import FastAPI, Request, Form, Depends, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from passlib.context import CryptContext
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo  # nếu Windows: pip install tzdata
-from database import SessionLocal, get_db
+from zoneinfo import ZoneInfo
+import socketio
+
+from database import SessionLocal, get_db, Base, engine
 from models import User, Message
 
-app = FastAPI()
+# ==== Database ====
+Base.metadata.create_all(bind=engine)
 
-# Mount static và template
+# ==== FastAPI + Socket.IO ====
+app = FastAPI()
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+app.mount("/socket.io", socketio.ASGIApp(sio))
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
 templates = Jinja2Templates(directory="templates")
 
-# ==== TIMEZONE: UTC -> Asia/Ho_Chi_Minh ====
+# ==== Timezone ====
 LOCAL_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
-
-def hms_local(dt: datetime, fmt: str = "%H:%M:%S") -> str:
-    """Format giờ địa phương từ datetime UTC/naive."""
-    if dt is None:
+def hms_local(dt):
+    if not dt:
         return ""
-    # Nếu datetime không có tzinfo, coi như UTC
+    # nếu datetime lấy từ DB không có tzinfo thì giả sử UTC
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(LOCAL_TZ).strftime(fmt)
+    return dt.astimezone(LOCAL_TZ).strftime("%H:%M:%S")
 
-# đăng ký filter cho Jinja
 templates.env.filters["hms_local"] = hms_local
-
-# Mã hóa password
+# ==== Password ====
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Dependency xác thực user
+# ==== Current user ====
 def get_current_user(request: Request):
     username = request.cookies.get("username")
     if not username:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return username
 
-# -------------------- ĐĂNG KÝ --------------------
+# ==== Pages ====
+@app.get("/", response_class=HTMLResponse)
+def root():
+    return RedirectResponse("/login")
+
 @app.get("/register", response_class=HTMLResponse)
 def register_page(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
 
 @app.post("/register")
 def register(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == username).first()
-    if user:
+    if db.query(User).filter(User.username == username).first():
         return templates.TemplateResponse("register.html", {"request": request, "error": "Username đã tồn tại"})
-    hashed_password = pwd_context.hash(password)
-    new_user = User(username=username, password=hashed_password)
-    db.add(new_user)
+    user = User(username=username, password=pwd_context.hash(password))
+    db.add(user)
     db.commit()
-    db.refresh(new_user)
     return RedirectResponse("/login", status_code=303)
 
-# -------------------- ĐĂNG NHẬP --------------------
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
@@ -67,96 +70,93 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     user = db.query(User).filter(User.username == username).first()
     if not user or not pwd_context.verify(password, user.password):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Username hoặc password sai"})
-    
-    response = RedirectResponse("/chat", status_code=303)
-    response.set_cookie(key="username", value=username, httponly=True, max_age=3600)
-    return response
+    resp = RedirectResponse("/chat", status_code=303)
+    resp.set_cookie("username", username, httponly=True, max_age=3600)
+    return resp
 
-# -------------------- LOGOUT --------------------
 @app.get("/logout")
-def logout():
-    response = RedirectResponse("/login")
-    response.delete_cookie("username")
-    return response
+async def logout(request: Request):
+    username = request.cookies.get("username")
 
-# -------------------- CHAT --------------------
+    resp = RedirectResponse("/login")
+    resp.delete_cookie("username")
+
+    if username:
+        await sio.emit("chat_message", {
+            "time": datetime.now(timezone.utc).astimezone(LOCAL_TZ).strftime("%H:%M:%S"),
+            "username": "System",
+            "message": f"⚠️ {username} đã rời phòng chat",
+            "sender_id": 0
+        })
+
+    return resp
+
 @app.get("/chat", response_class=HTMLResponse)
 def chat_page(request: Request, username: str = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Lấy 50 tin nhắn gần nhất theo thứ tự cũ -> mới
     messages = (
         db.query(Message)
+        .options(
+            joinedload(Message.sender),
+            joinedload(Message.receiver),
+            joinedload(Message.group),
+        )
         .order_by(Message.timestamp.asc())
         .limit(50)
         .all()
     )
     return templates.TemplateResponse(
-        "chat.html",
-        {"request": request, "username": username, "messages": messages}
+        "chat.html", {"request": request, "username": username, "messages": messages}
     )
 
-# -------------------- WEBSOCKET CHAT --------------------
-connected_users = {}
+# ==== Socket.IO ====
+@sio.event
+async def connect(sid, environ):
+    print("Client connected:", sid)
 
-@app.websocket("/ws/chat")
-async def websocket_endpoint(websocket: WebSocket):
-    username = websocket.cookies.get("username")
-    if not username:
-        await websocket.close(code=403)
-        return
+@sio.event
+async def disconnect(sid):
+    print("Client disconnected:", sid)
+    # Nếu muốn thông báo rời phòng ở đây:
+    session = await sio.get_session(sid)
+    username = session.get("username")
+    if username:
+        await sio.emit("chat_message", {
+            "time": datetime.now(timezone.utc).astimezone(LOCAL_TZ).strftime("%H:%M:%S"),
+            "username": "System",
+            "message": f"⚠️ {username} đã mất kết nối",
+            "sender_id": 0
+        })
 
-    await websocket.accept()
+@sio.event
+async def join_chat(sid, data):
+    username = data.get("username")
+    await sio.save_session(sid, {"username": username})
+    await sio.emit("chat_message", {
+        "time": datetime.now(timezone.utc).astimezone(LOCAL_TZ).strftime("%H:%M:%S"),
+        "username": "System",
+        "message": f"⚡ {username} đã tham gia phòng chat",
+        "sender_id": 0
+    })
 
-    # Nếu user đã connect trước đó, đóng kết nối cũ để tránh xung đột khi reload
-    if username in connected_users:
-        try:
-            await connected_users[username].close()
-        except Exception:
-            pass
+@sio.event
+async def send_message(sid, data):
+    session = await sio.get_session(sid)
+    username = session.get("username")
+    content = data.get("message")
 
-    # Thêm user vào danh sách kết nối
-    connected_users[username] = websocket
-
-    # (Tuỳ chọn) Nếu không muốn thông báo join/leave, comment 2 khối dưới:
-    join_msg = f"⚡ {username} đã tham gia phòng chat ({hms_local(datetime.now(timezone.utc))})"
-    for ws in connected_users.values():
-        if ws.client_state.value == 1 and ws is not websocket:
-            await ws.send_text(join_msg)
-
+    db = SessionLocal()
     try:
-        while True:
-            data = await websocket.receive_text()
+        user_obj = db.query(User).filter(User.username == username).first()
+        if user_obj:
+            msg = Message(sender_id=user_obj.id, content=content, timestamp=datetime.now(timezone.utc))
+            db.add(msg)
+            db.commit()
 
-            # ----- Lưu tin nhắn vào DB (UTC aware) -----
-            db = SessionLocal()
-            try:
-                user_obj = db.query(User).filter(User.username == username).first()
-                if user_obj:
-                    msg = Message(
-                        sender_id=user_obj.id,
-                        receiver_id=None,
-                        group_id=None,
-                        content=data,
-                        type="text",
-                        # Lưu UTC để chuẩn hoá
-                        timestamp=datetime.now(timezone.utc)
-                    )
-                    db.add(msg)
-                    db.commit()
-            finally:
-                db.close()
-            # -------------------------------------------
-
-            # Broadcast tin nhắn (hiển thị giờ VN)
-            time_str = hms_local(datetime.now(timezone.utc))
-            out = f"[{time_str}] {username}: {data}"
-            for user, ws in connected_users.items():
-                if ws.client_state.value == 1:
-                    await ws.send_text(out)
-
-    except WebSocketDisconnect:
-        connected_users.pop(username, None)
-        # (Tuỳ chọn) Không muốn thông báo leave thì comment khối dưới
-        leave_msg = f"⚠️ {username} đã rời phòng chat ({hms_local(datetime.now(timezone.utc))})"
-        for ws in connected_users.values():
-            if ws.client_state.value == 1:
-                await ws.send_text(leave_msg)
+            await sio.emit("chat_message", {
+                "time": datetime.now(timezone.utc).astimezone(LOCAL_TZ).strftime("%H:%M:%S"),
+                "username": username,
+                "message": content,
+                "sender_id": user_obj.id
+            })
+    finally:
+        db.close()

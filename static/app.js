@@ -2,43 +2,49 @@ document.addEventListener("DOMContentLoaded", function() {
     const chatBox = document.getElementById('chat-box');
     const inputMsg = document.getElementById('message');
     const sendBtn = document.getElementById('send');
+    const userList = document.getElementById('user-list');
+    // Lấy username từ attribute trong HTML
+    const username = document.body.dataset.username;
 
-    // Mở WebSocket, server sẽ lấy username từ cookie httponly
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${protocol}://${window.location.host}/ws/chat`);
-    ws.onmessage = function(event) {
-    const msg = document.createElement('div');
-    msg.classList.add("msg");
+    // Kết nối Socket.IO
+    const socket = io();
 
-    // Nếu là thông báo hệ thống (⚡ hoặc ⚠️)
-    if(event.data.startsWith("⚡") || event.data.startsWith("⚠️")) {
-        msg.classList.add("system");
-    }
+    // Thông báo server biết user join
+    socket.emit("join_chat", { username });
 
-    msg.innerHTML = event.data;
-    chatBox.appendChild(msg);
-    chatBox.scrollTop = chatBox.scrollHeight;
-}
+    // Nhận message từ server (dạng object JSON)
+    socket.on("chat_message", function(data) {
+        const div = document.createElement("div");
+        div.classList.add("msg");
 
+        if (data.sender_id === 0) {
+            // Tin hệ thống
+            div.classList.add("system");
+            div.innerText = `[${data.time}] ${data.message}`;
+        } else if (data.username === username) {
+            div.classList.add("self");
+            div.innerHTML = `[${data.time}] <b>${data.username}</b>: ${data.message}`;
+        } else {
+            // Tin của người khác
+            div.classList.add("other");
+            div.innerHTML = `[${data.time}] <b>${data.username}</b>: ${data.message}`;        }
 
-    ws.onclose = function() {
-        const msg = document.createElement('div');
-        msg.classList.add("system");
-        msg.innerHTML = "⚠️ Bạn đã rời phòng hoặc kết nối bị mất";
-        chatBox.appendChild(msg);
-    }
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    });
 
-    // Gửi tin nhắn khi nhấn nút
-    sendBtn.onclick = function() {
+    // Gửi tin nhắn
+    function sendMessage() {
         const message = inputMsg.value.trim();
-        if (message !== '') {
-            ws.send(message);
-            inputMsg.value = '';
+        if (message !== "") {
+            socket.emit("send_message", { message });
+            inputMsg.value = "";
         }
     }
 
-    // Gửi tin nhắn khi nhấn Enter
+    sendBtn.onclick = sendMessage;
+
     inputMsg.addEventListener("keypress", function(e) {
-        if (e.key === "Enter") sendBtn.click();
+        if (e.key === "Enter") sendMessage();
     });
 });
