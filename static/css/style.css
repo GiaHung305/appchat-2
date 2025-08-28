@@ -1,33 +1,123 @@
-body {
+/* === Reset cơ bản === */
+* {
   margin: 0;
-  height: 100vh;
-  display: flex;
-  font-family: "Segoe UI", Roboto, sans-serif;
-  background: #2f3136; /* tone Discord */
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  background: #1e1f22; /* nền tối hơn, hiện đại */
   color: #fff;
 }
 
 .chat-app {
   display: flex;
-  width: 100%;
-  height: 100%;
+  height: 100vh;
 }
 
-/* Sidebar */
+/* ===== Sidebar ===== */
 .sidebar {
-  width: 240px;
-  background: #202225;
+  width: 280px;
+  background: #1c1d20; /* sidebar nền tối */
   display: flex;
   flex-direction: column;
+  border-right: 1px solid #333;
+  overflow-y: auto;
 }
 
 .sidebar-header {
-  padding: 16px;
-  font-size: 18px;
+  padding: 20px;
+  font-size: 20px;
   font-weight: bold;
   border-bottom: 1px solid #333;
+  color: #eee;
 }
 
+.section-title {
+  padding: 10px 20px;
+  color: #999;
+  font-size: 14px;
+  text-transform: uppercase;
+}
+
+/* Search box */
+.search-box {
+  position: relative;
+  padding: 10px 15px;
+  border-bottom: 1px solid #333;
+  background: #1e1f22;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 8px 35px 8px 12px;
+  border-radius: 12px;
+  border: none;
+  outline: none;
+  background: #2c2f33;
+  color: #fff;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.search-box input:focus {
+  background: #3a3d42;
+}
+
+.search-box::after {
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/* Kết quả tìm kiếm */
+.search-results {
+  padding: 0;
+  margin-top: 5px;
+  list-style: none;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.search-results li {
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  color: #ccc;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.search-results li:hover {
+  background: #5865f2;
+  color: #fff;
+}
+
+/* Add Friend Button */
+.add-friend {
+  background: #5865f2;
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  flex-shrink: 0;
+}
+
+.add-friend:hover {
+  background: #4752c4;
+  transform: scale(1.05);
+}
+
+/* Danh sách user */
 .user-list {
   list-style: none;
   padding: 0;
@@ -35,116 +125,97 @@ body {
 }
 
 .user-list li {
-  padding: 12px 16px;
+  padding: 10px 15px;
   cursor: pointer;
-  color: #ccc;
-  transition: 0.2s;
-}
-
-.user-list li:hover {
-  background: #2f3136;
-  color: #fff;
+  border-radius: 8px;
 }
 
 .user-list li.active {
   background: #5865f2;
   color: #fff;
-  font-weight: bold;
 }
 
-/* Chat main */
+.user-list li:hover {
+  background: #40444b;
+}
+
+/* ===== Chat main ===== */
 .chat-main {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #36393f;
-}
-
-.chat-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid #444;
   background: #2f3136;
 }
 
-.chat-header h3 {
-  margin: 0;
-  font-size: 16px;
+.chat-header {
+  padding: 15px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #27292d;
+  border-bottom: 1px solid #333;
 }
 
 .logout-btn {
-  color: #ccc;
+  color: #f04747;
   text-decoration: none;
-  font-size: 14px;
-}
-.logout-btn:hover {
-  color: #fff;
+  font-weight: bold;
 }
 
-/* Chat box */
+.logout-btn:hover {
+  text-decoration: underline;
+}
+
 .chat-box {
   flex: 1;
-  padding: 16px;
+  padding: 15px;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
 }
 
+/* Tin nhắn */
 .msg {
-  margin: 6px 0;
-  display: flex;
+  margin-bottom: 10px;
 }
 
 .msg .bubble {
-  padding: 10px 14px;
+  display: inline-block;
+  padding: 8px 12px;
   border-radius: 12px;
-  max-width: 60%;
-  font-size: 14px;
-  line-height: 1.4;
-  word-wrap: break-word;
+  max-width: 70%;
 }
 
-/* Tin nhắn của mình */
-.msg.self {
-  justify-content: flex-end;
+.msg.system {
+  text-align: center;
+}
+
+.msg.system .bubble {
+  background: #7289da;
+  color: #fff;
+  display: inline-block; 
+  margin: 0 auto;          
 }
 .msg.self .bubble {
   background: #5865f2;
   color: #fff;
+  align-self: flex-end;
 }
 
-/* Tin nhắn người khác */
-.msg.other {
-  justify-content: flex-start;
-}
 .msg.other .bubble {
-  background: #4f545c;
+  background: #40444b;
   color: #fff;
-}
-
-/* Tin nhắn hệ thống */
-.msg.system {
-  justify-content: center;
-}
-.msg.system .bubble {
-  background: #faa61a;
-  color: #000;
-  font-style: italic;
 }
 
 /* Input */
 .chat-input {
   display: flex;
-  padding: 12px;
-  border-top: 1px solid #444;
-  background: #2f3136;
+  padding: 10px 15px;
+  border-top: 1px solid #333;
+  background: #27292d;
 }
 
 .chat-input input {
   flex: 1;
-  padding: 12px;
+  padding: 10px 15px;
   border-radius: 8px;
   border: none;
   outline: none;
@@ -154,16 +225,66 @@ body {
 }
 
 .chat-input button {
-  margin-left: 8px;
-  padding: 12px 18px;
-  border: none;
+  margin-left: 10px;
+  padding: 10px 16px;
   border-radius: 8px;
+  border: none;
   background: #5865f2;
   color: #fff;
-  font-weight: bold;
   cursor: pointer;
-  transition: 0.2s;
+  font-size: 16px;
 }
+
 .chat-input button:hover {
   background: #4752c4;
+}
+
+/* ===== Lời mời kết bạn ===== */
+.friend-requests {
+  list-style: none;
+  padding: 0 10px;
+  margin: 5px 0;
+}
+
+.friend-requests li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #2c2f33;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 5px;
+  font-size: 14px;
+  transition: background 0.2s;
+  cursor: default;
+}
+
+.friend-requests li:hover {
+  background: #5865f2;
+  color: #fff;
+}
+
+.friend-requests li button {
+  border: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.friend-requests li button.accept {
+  background: #4caf50;
+  color: #fff;
+  margin-left: 5px;
+}
+
+.friend-requests li button.reject {
+  background: #f44336;
+  color: #fff;
+  margin-left: 5px;
+}
+
+.friend-requests li button:hover {
+  opacity: 0.8;
 }

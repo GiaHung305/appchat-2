@@ -89,9 +89,15 @@ async def logout(request: Request):
     return resp
 
 @app.get("/chat", response_class=HTMLResponse)
-def chat_page(request: Request, username: str = Depends(get_current_user), db: Session = Depends(get_db)):
+def chat_page(
+    request: Request,
+    username: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Lấy thông tin người dùng hiện tại
     me = db.query(User).filter(User.username == username).first()
 
+    # Lấy 50 tin nhắn gần nhất
     messages = (
         db.query(Message)
         .options(joinedload(Message.sender), joinedload(Message.receiver), joinedload(Message.group))
@@ -100,10 +106,20 @@ def chat_page(request: Request, username: str = Depends(get_current_user), db: S
         .all()
     )
 
-    # danh sách user khác
-    users = db.query(User).filter(User.id != me.id).all()
+    # Lấy danh sách bạn bè đã accept
+    friends = db.query(Friend).filter(
+        (Friend.status == "accepted") & ((Friend.user_id == me.id) | (Friend.friend_id == me.id))
+    ).all()
 
-    # danh sách group mình tham gia
+    friend_users = []
+    for f in friends:
+        if f.friend_id == me.id:
+            u = db.query(User).get(f.user_id)
+        else:
+            u = db.query(User).get(f.friend_id)
+        friend_users.append(u)
+
+    # Lấy danh sách group mà user tham gia
     groups = (
         db.query(Group)
         .join(GroupMember, GroupMember.group_id == Group.id)
@@ -111,21 +127,29 @@ def chat_page(request: Request, username: str = Depends(get_current_user), db: S
         .all()
     )
 
+    # Trả về template với tất cả dữ liệu
     return templates.TemplateResponse("chat.html", {
         "request": request,
         "username": username,
+        "user_id": me.id,
         "messages": messages,
-        "users": users,
-        "groups": groups
+        "users": friend_users,
+        "groups": groups 
     })
 
-
 # ==== Friend APIs ====
+
+# Tìm kiếm user theo username
+@app.get("/users/search")
+def search_users(q: str, db: Session = Depends(get_db), username: str = Depends(get_current_user)):
+    me = db.query(User).filter(User.username == username).first()
+    users = db.query(User).filter(User.username.ilike(f"%{q}%"), User.id != me.id).all()
+    return [{"id": u.id, "username": u.username, "avatar": u.avatar} for u in users]
+
+# Gửi lời mời kết bạn (đã có rồi ở trên)
 @app.post("/friends/{friend_id}")
 def add_friend(friend_id: int, db: Session = Depends(get_db), username: str = Depends(get_current_user)):
     me = db.query(User).filter(User.username == username).first()
-    if not me:
-        raise HTTPException(401, "Not authenticated")
     if me.id == friend_id:
         raise HTTPException(400, "Không thể kết bạn với chính mình")
 
@@ -141,7 +165,57 @@ def add_friend(friend_id: int, db: Session = Depends(get_db), username: str = De
     db.commit()
     return {"status": "pending", "friend_id": friend_id}
 
+# Chấp nhận lời mời
+@app.post("/friends/accept/{request_id}")
+def accept_friend(request_id: int, db: Session = Depends(get_db), username: str = Depends(get_current_user)):
+    me = db.query(User).filter(User.username == username).first()
+    req = db.query(Friend).filter(
+        Friend.id == request_id,
+        Friend.friend_id == me.id,
+        Friend.status == "pending"
+    ).first()
+    if not req:
+        raise HTTPException(404, "Không có lời mời hợp lệ")
+    req.status = "accepted"
+    db.commit()
+    return {"message": "Đã chấp nhận"}
 
+# ==== Lấy danh sách lời mời kết bạn ====
+@app.get("/friends/requests")
+def get_friend_requests(db: Session = Depends(get_db), username: str = Depends(get_current_user)):
+    me = db.query(User).filter(User.username == username).first()
+    requests = db.query(Friend).filter(Friend.friend_id == me.id, Friend.status == "pending").all()
+    result = []
+    for r in requests:
+        u = db.query(User).get(r.user_id)
+        result.append({
+            "request_id": r.id,
+            "username": u.username,
+            "user_id": u.id
+        })
+    return result
+
+# Lấy danh sách bạn bè
+@app.get("/friends")
+def get_friends(db: Session = Depends(get_db), username: str = Depends(get_current_user)):
+    me = db.query(User).filter(User.username == username).first()
+    friends = db.query(Friend).filter(
+        (Friend.status == "accepted") &
+        ((Friend.user_id == me.id) | (Friend.friend_id == me.id))
+    ).all()
+
+    result = []
+    for f in friends:
+        if f.friend_id == me.id:
+            u = db.query(User).get(f.user_id)
+        else:
+            u = db.query(User).get(f.friend_id)
+        result.append({
+            "id": u.id,
+            "username": u.username,
+            "avatar": u.avatar
+        })
+    return result
 # ==== Group APIs ====
 @app.get("/groups")
 def my_groups(db: Session = Depends(get_db), username: str = Depends(get_current_user)):

@@ -5,7 +5,7 @@
   <title>Chat App</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
-<body data-username="{{ username }}">
+<body data-username="{{ username }}" data-user-id="{{ user_id }}">
   <div class="chat-app">
 
     <!-- Sidebar -->
@@ -13,20 +13,32 @@
         <div class="sidebar-header">
             <h2>💬 Chat</h2>
         </div>
-    <ul id="user-list" class="user-list">
-    <li data-room="global" class="active">🌍 Phòng chung</li>
 
-    <li class="section">👤 Bạn bè</li>
-    {% for u in users %}
-        <li data-room="user_{{ u.id }}" data-user-id="{{ u.id }}">👤 {{ u.username }}</li>
-    {% endfor %}
+        <!-- Search & Add Friend -->
+        <div class="search-box">
+            <input type="text" id="search-user" placeholder="Tìm kiếm người dùng..." />
+            <ul id="search-results" class="search-results"></ul>
+        </div>
 
-    <li class="section">👥 Nhóm</li>
-    {% for g in groups %}
-        <li data-room="group_{{ g.id }}" data-group-id="{{ g.id }}">👥 {{ g.name }}</li>
-    {% endfor %}
-    </ul>
+        <!-- User & Group list -->
+        <ul id="user-list" class="user-list">
+            <li class="section-title">📩 Lời mời kết bạn</li>
+            <ul id="friend-requests" class="friend-requests"></ul>
 
+            <li data-room="global" class="active">🌍 Phòng chung</li>
+
+            <li class="section-title">👥 Nhóm</li>
+            {% for g in groups %}
+                <li data-room="group_{{ g.id }}" data-group-id="{{ g.id }}">👥 {{ g.name }}</li>
+            {% endfor %}
+            <li class="section-title">👤 Bạn bè</li>
+            {% for u in users %}
+                <li data-room="user_{{ u.id }}" data-user-id="{{ u.id }}">👤 {{ u.username }}</li>
+            {% endfor %}
+
+
+
+        </ul>
     </aside>
 
     <!-- Chat main -->

@@ -18,10 +18,13 @@ class User(Base):
 class Friend(Base):
     __tablename__ = "friends"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    friend_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    friend_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     status = Column(String(20), default="pending")  # pending, accepted, blocked
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", foreign_keys=[user_id], backref="friends_sent")
+    friend = relationship("User", foreign_keys=[friend_id], backref="friends_received")
 
 # Bảng groups
 class Group(Base):

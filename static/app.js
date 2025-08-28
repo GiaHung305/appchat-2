@@ -1,158 +1,210 @@
 document.addEventListener("DOMContentLoaded", function() {
+    // ==== Elements & state ====
     const chatBox = document.getElementById('chat-box');
     const inputMsg = document.getElementById('message');
     const sendBtn = document.getElementById('send');
     const userList = document.getElementById('user-list');
     const roomTitle = document.getElementById('room-title');
-    
-    // Lấy username từ attribute trong HTML
+    const searchInput = document.getElementById('search-user');
+    const searchResults = document.getElementById('search-results');
+    const friendRequestsList = document.getElementById('friend-requests');
+
+    const myUserId = parseInt(document.body.dataset.userId);
     const username = document.body.dataset.username;
+
     let currentReceiverId = null;
     let currentGroupId = null;
-    let currentRoom = "global"; // theo dõi room hiện tại
-    
-    // Kết nối Socket.IO
-    const socket = io();
+    let currentRoom = "global";
 
-    // Thông báo server biết user join
+    const socket = io();
     socket.emit("join_chat", { username });
 
-    // Thêm click handler
+    // ==== Functions ====
+    function escapeHtml(unsafe) {
+        return unsafe.replace(/&/g, "&amp;")
+                     .replace(/</g, "&lt;")
+                     .replace(/>/g, "&gt;")
+                     .replace(/"/g, "&quot;")
+                     .replace(/'/g, "&#039;");
+    }
+
+    function renderMessage(data) {
+        const div = document.createElement("div");
+        div.classList.add("msg");
+        const safeMsg = escapeHtml(data.message);
+
+        if (data.sender_id === 0) div.classList.add("system"), div.innerHTML = `<div class="bubble">[${data.time}] ${safeMsg}</div>`;
+        else if (data.username === username) div.classList.add("self"), div.innerHTML = `<div class="bubble">[${data.time}] <b>${data.username}</b>: ${safeMsg}</div>`;
+        else div.classList.add("other"), div.innerHTML = `<div class="bubble">[${data.time}] <b>${data.username}</b>: ${safeMsg}</div>`;
+
+        return div;
+    }
+
+    function checkMessageBelongsToCurrentRoom(data) {
+        if (data.sender_id === 0) return currentRoom === "global";
+        if (currentRoom === "global") return !data.receiver_id && !data.group_id;
+        if (currentReceiverId) return !data.group_id && data.receiver_id !== null &&
+            ((data.sender_id === currentReceiverId && data.receiver_id === myUserId) ||
+             (data.sender_id === myUserId && data.receiver_id === currentReceiverId));
+        if (currentGroupId) return data.group_id === currentGroupId;
+        return false;
+    }
+
+    function sendMessage() {
+        const message = inputMsg.value.trim();
+        if (message !== "") {
+            socket.emit("send_message", { message, receiver_id: currentReceiverId, group_id: currentGroupId });
+            inputMsg.value = "";
+        }
+    }
+
+    function addFriendToSidebar(friend) {
+        const newFriendLi = document.createElement('li');
+        newFriendLi.dataset.room = `user_${friend.user_id}`;
+        newFriendLi.dataset.userId = friend.user_id;
+        newFriendLi.textContent = `👤 ${friend.username}`;
+        newFriendLi.addEventListener('click', () => {
+            currentReceiverId = friend.user_id;
+            currentGroupId = null;
+            currentRoom = `user_${friend.user_id}`;
+            roomTitle.textContent = `Chat riêng với ${friend.username}`;
+            userList.querySelectorAll("li").forEach(el => el.classList.remove("active"));
+            newFriendLi.classList.add("active");
+
+            // load messages
+            fetch(`/messages?receiver_id=${currentReceiverId}`)
+                .then(res => res.json())
+                .then(data => {
+                    chatBox.innerHTML = '';
+                    data.forEach(msg => chatBox.appendChild(renderMessage(msg)));
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                });
+        });
+        userList.appendChild(newFriendLi);
+    }
+
+    async function loadFriendRequests() {
+        try {
+            const res = await fetch('/friends/requests');
+            const requests = await res.json();
+            friendRequestsList.innerHTML = '';
+            requests.forEach(r => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    ${r.username} 
+                    <button class="accept-btn" data-id="${r.request_id}" data-user-id="${r.user_id}" data-username="${r.username}">Chấp nhận</button>
+                `;
+                friendRequestsList.appendChild(li);
+
+                li.querySelector('.accept-btn').addEventListener('click', async (e) => {
+                    const btn = e.target;
+                    const requestId = btn.dataset.id;
+                    const friend = {
+                        user_id: parseInt(btn.dataset.userId),
+                        username: btn.dataset.username
+                    };
+                    try {
+                        await fetch(`/friends/accept/${requestId}`, { method: "POST" });
+                        btn.textContent = "Đã chấp nhận";
+                        btn.disabled = true;
+
+                        // Thêm bạn vào sidebar
+                        addFriendToSidebar(friend);
+                    } catch (err) {
+                        console.error("Lỗi chấp nhận bạn bè:", err);
+                    }
+                });
+            });
+        } catch (err) {
+            console.error("Lỗi load lời mời:", err);
+        }
+    }
+
+    async function searchUsers(query) {
+        try {
+            const res = await fetch(`/users/search?q=${encodeURIComponent(query)}`);
+            const users = await res.json();
+            searchResults.innerHTML = '';
+            users.forEach(u => {
+                const li = document.createElement('li');
+                li.classList.add('search-item');
+                li.innerHTML = `
+                    ${u.username} 
+                    <button class="add-friend" data-id="${u.id}">Kết bạn</button>
+                `;
+                searchResults.appendChild(li);
+
+                li.querySelector(".add-friend").addEventListener("click", async (e) => {
+                    e.preventDefault();
+                    const btn = e.target;
+                    const friendId = btn.dataset.id;
+                    try {
+                        const resp = await fetch(`/friends/${friendId}`, { method: "POST" });
+                        const data = await resp.json();
+                        if (data.status === "pending") btn.textContent = "Đang chờ";
+                        else if (data.status === "exists") btn.textContent = "Đã là bạn";
+                        btn.disabled = true;
+                    } catch(err) {
+                        console.error("Lỗi gửi lời mời:", err);
+                    }
+                });
+            });
+        } catch(err) {
+            console.error("Lỗi tìm kiếm user:", err);
+        }
+    }
+
+    // ==== Event listeners ====
+    sendBtn.onclick = sendMessage;
+    inputMsg.addEventListener("keypress", e => { if (e.key === "Enter") sendMessage(); });
+
     userList.querySelectorAll("li[data-room]").forEach(li => {
         li.addEventListener("click", () => {
-            // reset active
             userList.querySelectorAll("li").forEach(el => el.classList.remove("active"));
             li.classList.add("active");
 
-            // reset trạng thái
-            currentReceiverId = null;
-            currentGroupId = null;
+            currentReceiverId = li.dataset.userId ? parseInt(li.dataset.userId) : null;
+            currentGroupId = li.dataset.groupId ? parseInt(li.dataset.groupId) : null;
             currentRoom = li.dataset.room;
 
-            // Cập nhật title
-            if (li.dataset.userId) {
-                currentReceiverId = parseInt(li.dataset.userId);
-                roomTitle.textContent = `Chat riêng với ${li.textContent.replace('👤 ', '')}`;
-            } else if (li.dataset.groupId) {
-                currentGroupId = parseInt(li.dataset.groupId);
-                socket.emit("join_group", { group_id: currentGroupId });
+            if (currentReceiverId) roomTitle.textContent = `Chat riêng với ${li.textContent.replace('👤 ', '')}`;
+            else if (currentGroupId) {
                 roomTitle.textContent = li.textContent.replace('👥 ', '');
-            } else {
-                roomTitle.textContent = "Phòng chung";
-            }
+                socket.emit("join_group", { group_id: currentGroupId });
+            } else roomTitle.textContent = "Phòng chung";
 
-            // clear chat box
-            chatBox.innerHTML = "";
-
-            // Fetch lịch sử tin nhắn
+            // Load messages
             let url = "/messages";
-            if (currentReceiverId) {
-                url += "?receiver_id=" + currentReceiverId;
-            } else if (currentGroupId) {
-                url += "?group_id=" + currentGroupId;
-            }
+            if (currentReceiverId) url += "?receiver_id=" + currentReceiverId;
+            else if (currentGroupId) url += "?group_id=" + currentGroupId;
 
             fetch(url)
                 .then(res => res.json())
                 .then(data => {
-                    data.forEach(msg => {
-                        const msgEl = renderMessage(msg, username);
-                        chatBox.appendChild(msgEl);
-                    });
+                    chatBox.innerHTML = '';
+                    data.forEach(msg => chatBox.appendChild(renderMessage(msg)));
                     chatBox.scrollTop = chatBox.scrollHeight;
                 });
         });
     });
 
-    // Render tin nhắn mới
-    function renderMessage(data, currentUser) {
-        const div = document.createElement("div");
-        div.classList.add("msg");
-
-        // Escape nội dung trước khi render
-        const safeMsg = escapeHtml(data.message);
-
-        if (data.sender_id === 0) {
-            div.classList.add("system");
-            div.innerHTML = `<div class="bubble">[${data.time}] ${safeMsg}</div>`;
-        } else if (data.username === currentUser) {
-            div.classList.add("self");
-            div.innerHTML = `<div class="bubble">[${data.time}] <b>${data.username}</b>: ${safeMsg}</div>`;
-        } else {
-            div.classList.add("other");
-            div.innerHTML = `<div class="bubble">[${data.time}] <b>${data.username}</b>: ${safeMsg}</div>`;
+    searchInput.addEventListener('input', async () => {
+        const query = searchInput.value.trim();
+        if (!query) {
+            searchResults.innerHTML = '';
+            return;
         }
+        searchUsers(query);
+    });
 
-        return div;
-    }
-
-    // Escape HTML để tránh XSS
-    function escapeHtml(unsafe) {
-        return unsafe
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
-
-    // Nhận message từ server - CHỈ HIỂN THỊ KHI ĐÚNG ROOM
     socket.on("chat_message", function(data) {
-        // Kiểm tra xem tin nhắn có thuộc room hiện tại không
-        const shouldDisplay = checkMessageBelongsToCurrentRoom(data);
-        
-        if (shouldDisplay) {
-            const msgEl = renderMessage(data, username);
-            chatBox.appendChild(msgEl);
+        if (checkMessageBelongsToCurrentRoom(data)) {
+            chatBox.appendChild(renderMessage(data));
             chatBox.scrollTop = chatBox.scrollHeight;
         }
     });
 
-    // Kiểm tra tin nhắn có thuộc room hiện tại không
-    function checkMessageBelongsToCurrentRoom(data) {
-        // Tin nhắn system luôn hiển thị ở phòng chung
-        if (data.sender_id === 0 && currentRoom === "global") {
-            return true;
-        }
-
-        // Nếu đang ở phòng chung
-        if (currentRoom === "global") {
-            // Chỉ hiển thị tin nhắn không có receiver_id và group_id cụ thể
-            // (tin nhắn phòng chung sẽ không có metadata này)
-            return !data.receiver_id && !data.group_id;
-        }
-
-        // Nếu đang ở chat riêng
-        if (currentReceiverId) {
-            // Hiển thị tin nhắn giữa mình và người đó
-            return (data.sender_id === currentReceiverId) || 
-                   (data.receiver_id === currentReceiverId);
-        }
-
-        // Nếu đang ở group
-        if (currentGroupId) {
-            return data.group_id === currentGroupId;
-        }
-
-        return false;
-    }
-
-    // Gửi tin nhắn
-    function sendMessage() {
-        const message = inputMsg.value.trim();
-        if (message !== "") {
-            socket.emit("send_message", { 
-                message: message,
-                receiver_id: currentReceiverId,
-                group_id: currentGroupId
-            });
-            inputMsg.value = "";
-        }
-    }
-
-    sendBtn.onclick = sendMessage;
-
-    inputMsg.addEventListener("keypress", function(e) {
-        if (e.key === "Enter") sendMessage();
-    });
+    // ==== Initial load ====
+    loadFriendRequests();
+    setInterval(loadFriendRequests, 10000);
 });
